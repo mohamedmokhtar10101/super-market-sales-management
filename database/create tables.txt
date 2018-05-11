@@ -1,0 +1,301 @@
+﻿create database supermarket
+create table users
+(
+id int not null auto_increment,
+userName varchar(100) not null,
+password varchar(100) not null,
+type int not null ,
+primary key(id)
+
+
+)
+
+create table product(
+id int not null ,
+p_name varchar(100) not null,
+category varchar(100),
+cost double not null,
+price double not null,
+quantity int not null,
+discount double not null default 0,
+image varchar(300)  default "resources/items/default.png",
+total_cost double not null default 0,
+sold_quantity int not null default 0,
+total_money double not null default 0,
+profits double not null default 0,
+primary key(id)
+)
+
+
+
+
+create table orders(
+id int not null auto_increment,
+quantity int not null default 0,
+day_ int not null,
+month_ int not null,
+year_ int not null,
+money double not null default 0,
+cashier_id int not null,
+primary key(id),
+foreign key (cashier_id) references users(id) on delete no action,
+check(day_<=31 and day_>0 and month_<=12 and month_>0 and year_ >=2018)
+)
+
+create table order_products(
+order_id int not null,
+product_id int not null,
+quantity int not null,
+primary key(order_id,product_id),
+foreign key (order_id) references orders(id) on delete cascade,
+foreign key (product_id) references product(id) on delete no action
+)
+create table shortages(
+p_id int not null,
+name varchar(100) not null,
+date_ date ,
+primary key(p_id),
+foreign key(p_id) references product(id)
+)
+create table inventoryCheck(
+
+id int not null auto_increment,
+day_ int not null,
+month_ int not null,
+year_ int not null,
+primary key(id),
+check(day_<=31 and day_>0 and month_<=12 and month_>0 and year_ >=2018)
+)
+
+create table inventoryCheck_products(
+inventory_id int not null,
+product_id int not null,
+actual_quantity int not null,
+system_quantity int not null,
+primary key(inventory_id,product_id),
+foreign key (inventory_id) references  inventoryCheck(id) on delete cascade,
+foreign key (product_id) references product(id) on delete no action
+)
+#triggers
+delimiter $$
+create trigger pNameUpdateTr before update on product
+for each row
+begin
+
+
+if new.p_name != old.p_name then
+update shortages
+set  name= new.p_name
+where p_id = old.id;
+end if;
+end
+
+
+delimiter $$
+create trigger pquantityUpdateTr before update on product
+for each row
+begin
+
+if new.quantity !=old.quantity && new.quantity=0 then
+insert into shortages
+values(new.id,new.p_name,curdate());
+
+end if;
+if new.quantity !=old.quantity && new.quantity!=0 then
+delete from shortages 
+where p_id = old.id ;
+
+
+end if;
+end
+
+delimiter $$
+create trigger pquantityInsertTr  before insert on product
+for each row
+begin
+
+
+
+if  new.quantity=0 then
+insert into shortages
+values(new.id,new.p_name,curdate());
+end if;
+end
+
+
+delimiter $$
+create trigger pInsertTr before insert on product
+for each row
+begin
+
+
+
+
+declare q int(22);
+declare c double;
+set q = new.quantity;
+set c = new.cost;
+
+set new.total_cost = c * q;
+end
+
+
+delimiter $$
+create trigger pUpdateTr before update on product
+for each row
+begin
+
+if new.quantity >= old.quantity then
+ set new.total_cost = old.total_cost + new.cost * (new.quantity - old.quantity);
+else
+set new.total_cost = new.cost * new.quantity ;
+end if;
+end
+
+
+
+
+
+delimiter $$
+create trigger opInsertTr before insert on order_products
+for each row
+begin
+
+
+declare q int(22);
+declare  sold int(22);
+declare orQuantity int(22);
+declare product_id int(22);
+declare order_id int(22);
+declare p double;
+declare d double;
+declare c double;
+declare oMoney double;
+declare pQuantity int(22);
+declare pProfits double;
+declare pTotalMoney double;
+set product_id = new.product_id;
+set order_id = new.order_id;
+set q = new.quantity;
+set oMoney = (select money from orders where id = order_id);
+set p = (select price from product where id = product_id);
+set d = ( select discount from product where id = product_id);
+set c = ( select cost from product where id = product_id);
+set sold = (select sold_quantity from product where id = product_id);
+set orQuantity = (select quantity from orders where id = order_id);
+set pQuantity = (select quantity from product where id = product_id);
+set pProfits = (select profits from product where id = product_id);
+set pTotalMoney = (select total_money from product where id = product_id);
+update product
+set sold_quantity = sold + q, quantity = pQuantity - q,profits = pProfits +  (p - p* d/100) * q - c * q, total_money = pTotalMoney + (p - p* d/100) * q
+where id = product_id;
+update orders
+set quantity = orQuantity + q, money = oMoney +  ((p - d * p / 100) * q)
+where id = order_id;
+
+end
+delimiter $$
+create trigger opDeleteTr before delete on order_products
+for each row
+begin
+
+
+declare q int(22);
+declare  sold int(22);
+declare orQuantity int(22);
+declare product_id int(22);
+declare order_id int(22);
+declare p double;
+declare d double;
+declare c double;
+declare oMoney double;
+declare pQuantity int(22);
+declare pProfits double;
+declare pTotalMoney double;
+
+set product_id = old.product_id;
+set order_id = old.order_id;
+set product_id = old.product_id;
+set q = old.quantity;
+set oMoney = (select money from orders where id = order_id);
+set p = (select price from product where id = product_id);
+set d = ( select discount from product where id = product_id);
+set c = ( select cost from product where id = product_id);
+
+set sold = (select sold_quantity from product where id = product_id);
+set orQuantity = (select quantity from orders where id = order_id);
+set pQuantity = (select quantity from product where id = product_id);
+set pProfits = (select profits from product where id = product_id);
+set pTotalMoney = (select total_money from product where id = product_id);
+update product
+set sold_quantity = sold - q,  quantity = pQuantity + q,profits = pProfits -((p - p* d/100) * q - c * q), total_money = pTotalMoney - (p - p* d/100) * q
+
+where id = product_id;
+update orders
+set quantity = orQuantity - q,money = oMoney -  (p - d * p / 100) * q
+where id = order_id;
+end
+
+delimiter $$
+create trigger opUpdateTr before update on order_products
+for each row
+begin
+
+
+declare q int(22);
+declare  sold int(22);
+declare orQuantity int(22);
+declare product_id int(22);
+declare order_id int(22);
+declare p double;
+declare d double;
+declare c double;
+declare oMoney double;
+declare pQuantity int(22);
+declare pProfits double;
+declare pTotalMoney double;
+
+
+set product_id = new.product_id;
+set order_id = new.order_id;
+set q = old.quantity;
+set oMoney = (select money from orders where id = order_id);
+set p = (select price from product where id = product_id);
+set d = ( select discount from product where id = product_id);
+set c = ( select cost from product where id = product_id);
+set sold = (select sold_quantity from product where id = product_id);
+set orQuantity = (select quantity from orders where id = order_id);
+set pQuantity = (select quantity from product where id = product_id);
+set pProfits = (select profits from product where id = product_id);
+set pTotalMoney = (select total_money from product where id = product_id);
+update product
+set sold_quantity = sold - q + new.quantity, quantity = pQuantity + q - new.quantity,profits = pProfits -((p - p* d/100) * q - c * q) + ((p - p* d/100) * new.quantity - c * new.quantity), total_money = pTotalMoney - (p - p* d/100) * q + ((p - p* d/100) * new.quantity - c * new.quantity)
+
+where id = product_id;
+update orders
+set quantity = orQuantity - q + new.quantity,money = oMoney -  (p - d * p / 100) * q + (p - d * p / 100) * new.quantity
+where id = order_id;
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
